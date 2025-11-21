@@ -10,10 +10,13 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
       },
       plugins: [react()],
+      // Note: Vite automatically exposes env vars prefixed with VITE_ via import.meta.env
+      // We don't need to define them here, but we'll keep GEMINI_API_KEY for backward compatibility
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
       },
+      envPrefix: 'VITE_',
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

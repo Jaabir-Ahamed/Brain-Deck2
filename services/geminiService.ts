@@ -1,8 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiCard } from "../types";
 
+// Get API key from environment variables
+// Vite exposes env vars prefixed with VITE_ via import.meta.env
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.warn('GEMINI_API_KEY not found in environment variables. AI flashcard generation will not work.');
+}
+
 // Initialize client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
 export const generateFlashcardsFromText = async (
   topic: string,
@@ -52,13 +60,31 @@ export const generateFlashcardsFromText = async (
     }
     
     return [];
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating flashcards:", error);
+    
+    // Provide more specific error messages
+    if (!apiKey) {
+      return [{
+        front: "API Key Missing",
+        back: "GEMINI_API_KEY is not configured. Please add it to your .env file.",
+        type: "qa" as const
+      }];
+    }
+    
+    if (error?.message?.includes('API key')) {
+      return [{
+        front: "Invalid API Key",
+        back: "The GEMINI_API_KEY is invalid. Please check your .env file.",
+        type: "qa" as const
+      }];
+    }
+    
     // Return a fallback card if generation fails so the user sees something
     return [{
         front: "Error generating content",
-        back: "Please try again or check your connection.",
-        type: "qa"
+        back: error?.message || "Please try again or check your connection.",
+        type: "qa" as const
     }];
   }
 };

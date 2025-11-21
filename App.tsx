@@ -4,6 +4,8 @@ import { User, Deck, Card, AIUploadJob } from './types';
 import { generateFlashcardsFromTopic } from './services/geminiService';
 import { calculateSm2, getNextReviewDate, formatInterval } from './utils/srs';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { supabase } from './src/lib/supabase';
+import { getProfile, getDecks, createDeck, updateDeck, deleteDeck, getCardsByUser, createCards, updateCard, updateDeckCardCount } from './src/lib/db';
 
 // --- MOCK DATA REMOVED ---
 const INITIAL_DECKS: Deck[] = [];
@@ -105,50 +107,126 @@ const AuthPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    if (!email || !password) {
-      setError('Please fill in all fields');
+    // Check if Supabase is configured
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      setError('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file. See SUPABASE_SETUP.md for instructions.');
+      setLoading(false);
       return;
     }
 
-    if (mode === 'signup') {
-      if (!name) {
-        setError('Name is required for sign up');
-        return;
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (mode === 'signup') {
+        if (!name) {
+          setError('Name is required for sign up');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          setError('Password must be at least 6 characters');
+          setLoading(false);
+          return;
+        }
+        
+        // Sign up with Supabase
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: name,
+            },
+            emailRedirectTo: window.location.origin,
+          },
+        });
+
+        if (authError) throw authError;
+
+        // Check if email confirmation is required
+        if (authData.user && !authData.session) {
+          // Email confirmation is enabled - user needs to confirm email
+          setError('Account created! Please check your email to confirm your account, then try logging in.');
+          setMode('login'); // Switch to login mode
+          return;
+        }
+
+        if (authData.user && authData.session) {
+          // User is immediately authenticated (email confirmation disabled)
+          // Try to get profile with retries (trigger might take a moment)
+          let profile = null;
+          for (let i = 0; i < 5; i++) {
+            profile = await getProfile(authData.user.id);
+            if (profile) break;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          if (profile) {
+            onLogin(profile);
+          } else {
+            // Profile not found - try to create it manually
+            try {
+              const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: authData.user.id,
+                  email: authData.user.email || email,
+                  name: name,
+                })
+                .select()
+                .single();
+
+              if (profileError) {
+                console.error('Error creating profile:', profileError);
+                setError('Account created but profile creation failed. Please try logging in or contact support.');
+              } else if (profileData) {
+                onLogin({
+                  id: profileData.id,
+                  email: profileData.email,
+                  name: profileData.name,
+                });
+              }
+            } catch (err: any) {
+              console.error('Error in profile creation fallback:', err);
+              setError('Account created but profile not found. The database migration may not have been run. Please check SUPABASE_SETUP.md and try logging in.');
+            }
+          }
+        }
+      } else {
+        // Sign in with Supabase
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (authError) throw authError;
+
+        if (authData.user) {
+          const profile = await getProfile(authData.user.id);
+          if (profile) {
+            onLogin(profile);
+          } else {
+            setError('Profile not found. Please contact support.');
+          }
+        }
       }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters');
-        return;
-      }
-      
-      // Create new user
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        email,
-        name
-      };
-      
-      // Simulate API delay
-      setTimeout(() => {
-        onLogin(newUser);
-      }, 500);
-    } else {
-      // Login logic
-      // For demo purposes, we just accept any email/password if length > 0
-      // In a real app, we would validate against a DB
-      const mockUser: User = {
-        id: 'u_demo',
-        email,
-        name: email.split('@')[0] || 'User'
-      };
-      
-      setTimeout(() => {
-        onLogin(mockUser);
-      }, 500);
+    } catch (err: any) {
+      setError(err.message || 'An error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -213,9 +291,10 @@ const AuthPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
 
           <button 
             type="submit"
-            className="w-full bg-white text-black font-bold py-3 rounded-lg hover:bg-gray-200 transition-colors"
+            disabled={loading}
+            className="w-full bg-white text-black font-bold py-3 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {mode === 'login' ? 'Sign In' : 'Sign Up'}
+            {loading ? 'Loading...' : (mode === 'login' ? 'Sign In' : 'Sign Up')}
           </button>
         </form>
         
@@ -350,7 +429,7 @@ const Dashboard: React.FC<{ decks: Deck[], user: User, setPage: (p: string) => v
 
 // --- PAGE: DECK BUILDER (MANUAL) ---
 
-const DeckBuilderPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void, setPage: (p: string) => void }> = ({ onAddDeck, setPage }) => {
+const DeckBuilderPage: React.FC<{ onAddDeck: (d: Omit<Deck, 'id' | 'created'>, c: Omit<Card, 'id'>[]) => Promise<void>, setPage: (p: string) => void }> = ({ onAddDeck, setPage }) => {
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
   const [draftCards, setDraftCards] = useState<{front: string, back: string, difficulty: 'Easy' | 'Medium' | 'Hard'}[]>([]);
@@ -372,19 +451,16 @@ const DeckBuilderPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void, setPa
     setDraftCards(draftCards.filter((_, i) => i !== index));
   };
 
-  const saveDeck = () => {
+  const saveDeck = async () => {
     if (!title.trim() || !subject.trim() || draftCards.length === 0) return;
 
-    const newDeckId = Math.random().toString(36).substr(2, 9);
-    const newDeck: Deck = {
-        id: newDeckId,
+    const newDeck: Omit<Deck, 'id' | 'created'> = {
         title: title,
         subject: subject,
         cardCount: draftCards.length,
-        created: new Date().toISOString()
     };
 
-    const newCards: Card[] = draftCards.map((dc, idx) => {
+    const newCards: Omit<Card, 'id'>[] = draftCards.map((dc) => {
         // Preset SRS values based on initial difficulty selection
         let interval = 0;
         let easeFactor = 2.5;
@@ -407,9 +483,8 @@ const DeckBuilderPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void, setPa
         }
 
         return {
-            id: `${newDeckId}-c${idx}`,
-            deckId: newDeckId,
-            type: 'qa',
+            deckId: '', // Will be set by onAddDeck
+            type: 'qa' as const,
             front: dc.front,
             back: dc.back,
             status: status,
@@ -419,7 +494,7 @@ const DeckBuilderPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void, setPa
         };
     });
 
-    onAddDeck(newDeck, newCards);
+    await onAddDeck(newDeck, newCards);
     setPage('dashboard');
   };
 
@@ -548,7 +623,7 @@ const DeckBuilderPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void, setPa
 
 // --- PAGE: UPLOADS ---
 
-const UploadsPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void }> = ({ onAddDeck }) => {
+const UploadsPage: React.FC<{ onAddDeck: (d: Omit<Deck, 'id' | 'created'>, c: Omit<Card, 'id'>[]) => Promise<void> }> = ({ onAddDeck }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [jobs, setJobs] = useState<AIUploadJob[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -577,37 +652,45 @@ const UploadsPage: React.FC<{ onAddDeck: (d: Deck, c: Card[]) => void }> = ({ on
 
         // Call Gemini to generate based on filename/topic since we can't parse PDF reliably in pure client demo
         const topic = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+        
+        // Check if API key is configured
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            throw new Error("GEMINI_API_KEY is not configured. Please add VITE_GEMINI_API_KEY to your .env file and restart the dev server.");
+        }
+        
         const generatedCards = await generateFlashcardsFromTopic(topic);
 
         if (!generatedCards || generatedCards.length === 0) {
             throw new Error("AI returned no cards. Please try again with a simpler filename or topic.");
         }
+        
+        // Check if we got error cards (API key issues, etc.)
+        if (generatedCards.length === 1 && generatedCards[0].front.includes("Error") || generatedCards[0].front.includes("API")) {
+            throw new Error(generatedCards[0].back);
+        }
 
         setJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, progress: 80 } : j));
 
         // Create Deck
-        const newDeckId = Math.random().toString(36).substr(2, 9);
-        const newDeck: Deck = {
-            id: newDeckId,
+        const newDeck: Omit<Deck, 'id' | 'created'> = {
             title: topic.charAt(0).toUpperCase() + topic.slice(1).replace(/[-_]/g, ' '),
             subject: 'AI Generated',
             cardCount: generatedCards.length,
-            created: new Date().toISOString()
         };
 
-        const newCards: Card[] = generatedCards.map((gc, idx) => ({
-            id: `${newDeckId}-c${idx}`,
-            deckId: newDeckId,
-            type: gc.type || 'qa',
+        const newCards: Omit<Card, 'id'>[] = generatedCards.map((gc) => ({
+            deckId: '', // Will be set by onAddDeck
+            type: (gc.type || 'qa') as 'qa' | 'cloze',
             front: gc.front || 'Error: No Question',
             back: gc.back || 'Error: No Answer',
-            status: 'new',
+            status: 'new' as const,
             interval: 0,
             repetitions: 0,
             easeFactor: 2.5
         }));
 
-        onAddDeck(newDeck, newCards);
+        await onAddDeck(newDeck, newCards);
 
         setJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, status: 'completed', progress: 100 } : j));
 
@@ -920,50 +1003,147 @@ const App: React.FC = () => {
   const [decks, setDecks] = useState<Deck[]>(INITIAL_DECKS);
   const [cards, setCards] = useState<Card[]>(INITIAL_CARDS);
   const [activeDeck, setActiveDeck] = useState<Deck | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Persistence
+  // Check for existing session and load user data
   useEffect(() => {
-    const savedUser = localStorage.getItem('bd_user');
-    const savedDecks = localStorage.getItem('bd_decks');
-    const savedCards = localStorage.getItem('bd_cards');
+    const initAuth = async () => {
+      try {
+        // Check if Supabase is configured
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseKey) {
+          console.warn('Supabase not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file');
+          setLoading(false);
+          return;
+        }
 
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-      setCurrentPage('dashboard');
+        // Check for existing session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          setLoading(false);
+          return;
+        }
+        
+        if (session?.user) {
+          const profile = await getProfile(session.user.id);
+          if (profile) {
+            setUser(profile);
+            setCurrentPage('dashboard');
+            await loadUserData(session.user.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth changes (only if Supabase is configured)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    if (supabaseUrl && supabaseKey) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        try {
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setDecks([]);
+            setCards([]);
+            setCurrentPage('login');
+          } else if (event === 'SIGNED_IN' && session?.user) {
+            const profile = await getProfile(session.user.id);
+            if (profile) {
+              setUser(profile);
+              setCurrentPage('dashboard');
+              await loadUserData(session.user.id);
+            }
+          }
+        } catch (error) {
+          console.error('Error in auth state change:', error);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
     }
-    if (savedDecks) setDecks(JSON.parse(savedDecks));
-    if (savedCards) setCards(JSON.parse(savedCards));
   }, []);
 
-  useEffect(() => {
-    if (user) localStorage.setItem('bd_user', JSON.stringify(user));
-    else localStorage.removeItem('bd_user');
-  }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem('bd_decks', JSON.stringify(decks));
-    localStorage.setItem('bd_cards', JSON.stringify(cards));
-  }, [decks, cards]);
-
-  const handleLogin = (loggedInUser: User) => {
-    setUser(loggedInUser);
-    setCurrentPage('dashboard');
+  // Load user's decks and cards from Supabase
+  const loadUserData = async (userId: string) => {
+    try {
+      const [userDecks, userCards] = await Promise.all([
+        getDecks(userId),
+        getCardsByUser(userId),
+      ]);
+      setDecks(userDecks);
+      setCards(userCards);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogin = async (loggedInUser: User) => {
+    setUser(loggedInUser);
+    setCurrentPage('dashboard');
+    await loadUserData(loggedInUser.id);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
+    setDecks([]);
+    setCards([]);
     setCurrentPage('login');
   };
 
-  const handleAddDeck = (newDeck: Deck, newCards: Card[]) => {
-    setDecks(prev => [newDeck, ...prev]);
-    setCards(prev => [...prev, ...newCards]);
+  const handleAddDeck = async (newDeck: Omit<Deck, 'id' | 'created'>, newCards: Omit<Card, 'id'>[]) => {
+    if (!user) return;
+
+    try {
+      // Create deck in Supabase
+      const createdDeck = await createDeck(user.id, newDeck);
+      if (!createdDeck) {
+        console.error('Failed to create deck');
+        return;
+      }
+
+      // Create cards in Supabase
+      const cardsWithDeckId = newCards.map(card => ({
+        ...card,
+        deckId: createdDeck.id,
+      }));
+      const createdCards = await createCards(cardsWithDeckId);
+
+      // Update deck card count
+      await updateDeckCardCount(createdDeck.id);
+
+      // Update local state
+      setDecks(prev => [createdDeck, ...prev]);
+      setCards(prev => [...createdCards, ...prev]);
+    } catch (error) {
+      console.error('Error adding deck:', error);
+    }
   };
 
-  const handleDeleteDeck = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this deck?")) {
+  const handleDeleteDeck = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this deck?")) return;
+
+    try {
+      const success = await deleteDeck(id);
+      if (success) {
         setDecks(prev => prev.filter(d => d.id !== id));
         setCards(prev => prev.filter(c => c.deckId !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting deck:', error);
     }
   };
 
@@ -972,18 +1152,62 @@ const App: React.FC = () => {
     setCurrentPage('study');
   };
 
-  const handleBackFromStudy = () => {
+  const handleBackFromStudy = async () => {
+    if (activeDeck && user) {
+      // Update last studied timestamp
+      await updateDeck(activeDeck.id, { lastStudied: new Date().toISOString() });
+      // Reload decks to get updated timestamp
+      await loadUserData(user.id);
+    }
     setActiveDeck(null);
     setCurrentPage('dashboard');
   };
 
-  const handleUpdateCard = (updatedCard: Card) => {
-      setCards(prev => prev.map(c => c.id === updatedCard.id ? updatedCard : c));
+  const handleUpdateCard = async (updatedCard: Card) => {
+    try {
+      const savedCard = await updateCard(updatedCard.id, updatedCard);
+      if (savedCard) {
+        setCards(prev => prev.map(c => c.id === updatedCard.id ? savedCard : c));
+      }
+    } catch (error) {
+      console.error('Error updating card:', error);
+    }
   };
 
   // Routing logic
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Icons.Spinner size={32} className="animate-spin mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if Supabase is configured
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const isSupabaseConfigured = !!(supabaseUrl && supabaseKey);
+
   if (!user) {
-    return <AuthPage onLogin={handleLogin} />;
+    return (
+      <>
+        {!isSupabaseConfigured && (
+          <div className="fixed top-0 left-0 right-0 bg-yellow-500/20 border-b border-yellow-500/50 text-yellow-400 px-4 py-3 text-sm z-50">
+            <div className="max-w-6xl mx-auto flex items-center gap-2">
+              <Icons.Error size={18} />
+              <span>
+                Supabase not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.
+                See SUPABASE_SETUP.md for instructions.
+              </span>
+            </div>
+          </div>
+        )}
+        <AuthPage onLogin={handleLogin} />
+      </>
+    );
   }
 
   if (currentPage === 'study' && activeDeck) {
