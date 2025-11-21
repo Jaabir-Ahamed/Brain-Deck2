@@ -765,7 +765,13 @@ const UploadsPage: React.FC<{ onAddDeck: (d: Omit<Deck, 'id' | 'created'>, c: Om
             </div>
             {job.status === 'completed' && <Icons.Check size={20} className="text-green-500" />}
             {job.status === 'error' && <Icons.Error size={20} className="text-red-500" />}
-            <button className="text-muted-foreground hover:text-destructive transition-colors">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setJobs(prev => prev.filter(j => j.id !== job.id));
+              }}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+            >
               <Icons.Delete size={18} />
             </button>
           </div>
@@ -1007,6 +1013,8 @@ const App: React.FC = () => {
 
   // Check for existing session and load user data
   useEffect(() => {
+    let isMounted = true;
+    
     const initAuth = async () => {
       try {
         // Check if Supabase is configured
@@ -1015,35 +1023,56 @@ const App: React.FC = () => {
         
         if (!supabaseUrl || !supabaseKey) {
           console.warn('Supabase not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file');
-          setLoading(false);
+          if (isMounted) setLoading(false);
           return;
         }
 
-        // Check for existing session
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // Check for existing session with timeout
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Session check timeout')), 5000)
+        );
+        
+        const { data: { session }, error } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as { data: { session: any }, error: any };
         
         if (error) {
           console.error('Error getting session:', error);
-          setLoading(false);
+          if (isMounted) setLoading(false);
           return;
         }
         
         if (session?.user) {
           const profile = await getProfile(session.user.id);
-          if (profile) {
+          if (profile && isMounted) {
             setUser(profile);
             setCurrentPage('dashboard');
-            await loadUserData(session.user.id);
+            // Load user data asynchronously - don't block loading state
+            loadUserData(session.user.id).catch((dataError) => {
+              console.error('Error loading user data:', dataError);
+              // Continue anyway - user can still use the app
+            });
+          } else if (!profile) {
+            // No profile found - user might need to log in again
+            console.warn('Profile not found for session user');
           }
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setLoading(false);
+        // Always set loading to false, even if there are errors
+        if (isMounted) setLoading(false);
       }
     };
 
     initAuth();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
 
     // Listen for auth changes (only if Supabase is configured)
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -1079,14 +1108,29 @@ const App: React.FC = () => {
   // Load user's decks and cards from Supabase
   const loadUserData = async (userId: string) => {
     try {
-      const [userDecks, userCards] = await Promise.all([
+      // Use Promise.allSettled to ensure both calls complete even if one fails
+      const results = await Promise.allSettled([
         getDecks(userId),
         getCardsByUser(userId),
       ]);
-      setDecks(userDecks);
-      setCards(userCards);
+      
+      const userDecks = results[0].status === 'fulfilled' ? results[0].value : [];
+      const userCards = results[1].status === 'fulfilled' ? results[1].value : [];
+      
+      if (results[0].status === 'rejected') {
+        console.error('Error loading decks:', results[0].reason);
+      }
+      if (results[1].status === 'rejected') {
+        console.error('Error loading cards:', results[1].reason);
+      }
+      
+      setDecks(userDecks || []);
+      setCards(userCards || []);
     } catch (error) {
       console.error('Error loading user data:', error);
+      // Set empty arrays on error so app can still function
+      setDecks([]);
+      setCards([]);
     }
   };
 
