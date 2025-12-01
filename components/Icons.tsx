@@ -19,11 +19,7 @@ import {
   X,
   ChevronRight,
   BrainCircuit,
-  Pencil,
-  Lightbulb,
-  AlertTriangle,
-  Clock,
-  TrendingUp
+  Pencil
 } from 'lucide-react';
 
 export const Icons = {
@@ -46,9 +42,5 @@ export const Icons = {
   Close: X,
   ChevronRight: ChevronRight,
   Logo: BrainCircuit,
-  Edit: Pencil,
-  Suggestions: Lightbulb,
-  Warning: AlertTriangle,
-  Clock: Clock,
-  Trending: TrendingUp
+  Edit: Pencil
 };
