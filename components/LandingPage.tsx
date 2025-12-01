@@ -6,6 +6,7 @@ import {
   ArrowRight,
   TrendingUp,
   BarChart3,
+  BrainCircuit,
 } from "lucide-react";
 
 interface LandingPageProps {
@@ -124,11 +125,9 @@ export default function LandingPage({ onGetStarted, onLogIn }: LandingPageProps)
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between relative">
             <div className="flex items-center gap-2 group cursor-pointer">
-              <img
-                src="/favicon_io (1)/android-chrome-512x512.png"
-                alt="BrainDeck Logo"
-                className="w-8 h-8 rounded transition-transform duration-300 group-hover:rotate-12"
-              />
+              <div className="bg-white text-black p-1.5 rounded-lg transition-transform duration-300 group-hover:rotate-12">
+                <BrainCircuit className="w-5 h-5" />
+              </div>
               <span className="text-lg sm:text-xl font-semibold">
                 BrainDeck
               </span>
@@ -424,11 +423,9 @@ export default function LandingPage({ onGetStarted, onLogIn }: LandingPageProps)
       <footer className="border-t border-gray-800 mt-12 sm:mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 text-center">
           <div className="flex items-center gap-2 mb-3 sm:mb-4 justify-center group cursor-pointer">
-            <img
-              src="/favicon_io (1)/android-chrome-512x512.png"
-              alt="BrainDeck Logo"
-              className="w-8 h-8 rounded transition-transform duration-300 group-hover:rotate-12"
-            />
+            <div className="bg-white text-black p-1.5 rounded-lg transition-transform duration-300 group-hover:rotate-12">
+              <BrainCircuit className="w-5 h-5" />
+            </div>
             <span className="text-lg sm:text-xl font-semibold">
               BrainDeck
             </span>

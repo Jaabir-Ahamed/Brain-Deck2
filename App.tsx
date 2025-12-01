@@ -29,6 +29,7 @@ const Layout: React.FC<{
   const navItems = [
     { id: 'dashboard', label: 'Home', icon: Icons.Dashboard },
     { id: 'decks', label: 'Decks', icon: Icons.Decks },
+    { id: 'quiz', label: 'Quiz', icon: Icons.Quiz },
     { id: 'uploads', label: 'AI Generator', icon: Icons.Upload },
     { id: 'create-deck', label: 'Deck Builder', icon: Icons.Plus },
     { id: 'profile', label: 'Profile', icon: Icons.Profile },
@@ -2014,6 +2015,324 @@ const ResetPasswordPage: React.FC<{ onComplete: () => void }> = ({ onComplete })
   );
 };
 
+// --- PAGE: QUIZ MODE ---
+
+const QuizPage: React.FC<{ 
+  decks: Deck[], 
+  cards: Card[],
+  setPage: (p: string) => void 
+}> = ({ decks, cards, setPage }) => {
+  const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
+  const [quizCards, setQuizCards] = useState<Card[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [answered, setAnswered] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [quizComplete, setQuizComplete] = useState(false);
+  const [options, setOptions] = useState<string[]>([]);
+  const [timeLeft, setTimeLeft] = useState(15);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+
+  // Generate quiz options (1 correct + 3 wrong)
+  const generateOptions = (correctAnswer: string, allCards: Card[]) => {
+    const wrongAnswers = allCards
+      .filter(c => c.back !== correctAnswer)
+      .map(c => c.back)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+    
+    // If we don't have enough wrong answers, generate placeholders
+    while (wrongAnswers.length < 3) {
+      wrongAnswers.push(`Option ${wrongAnswers.length + 1}`);
+    }
+    
+    const allOptions = [...wrongAnswers, correctAnswer];
+    return allOptions.sort(() => Math.random() - 0.5);
+  };
+
+  // Start quiz with selected deck
+  const startQuiz = (deck: Deck) => {
+    const deckCards = cards.filter(c => c.deckId === deck.id);
+    if (deckCards.length < 1) return;
+    
+    // Shuffle cards
+    const shuffled = [...deckCards].sort(() => Math.random() - 0.5);
+    setQuizCards(shuffled);
+    setSelectedDeck(deck);
+    setCurrentIndex(0);
+    setScore(0);
+    setStreak(0);
+    setBestStreak(0);
+    setQuizComplete(false);
+    setAnswered(false);
+    setSelectedAnswer(null);
+    setTimeLeft(15);
+    setOptions(generateOptions(shuffled[0].back, deckCards));
+  };
+
+  // Timer effect
+  useEffect(() => {
+    if (!selectedDeck || answered || quizComplete) return;
+    
+    if (timeLeft <= 0) {
+      handleAnswer(null);
+      return;
+    }
+    
+    const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [timeLeft, selectedDeck, answered, quizComplete]);
+
+  // Handle answer selection
+  const handleAnswer = (answer: string | null) => {
+    if (answered) return;
+    
+    setAnswered(true);
+    setSelectedAnswer(answer);
+    
+    const currentCard = quizCards[currentIndex];
+    const isCorrect = answer === currentCard.back;
+    
+    if (isCorrect) {
+      // More points for faster answers
+      const timeBonus = Math.floor(timeLeft * 10);
+      setScore(prev => prev + 100 + timeBonus);
+      setStreak(prev => {
+        const newStreak = prev + 1;
+        if (newStreak > bestStreak) setBestStreak(newStreak);
+        return newStreak;
+      });
+    } else {
+      setStreak(0);
+    }
+  };
+
+  // Move to next question
+  const nextQuestion = () => {
+    if (currentIndex < quizCards.length - 1) {
+      const nextIdx = currentIndex + 1;
+      setCurrentIndex(nextIdx);
+      setAnswered(false);
+      setSelectedAnswer(null);
+      setTimeLeft(15);
+      setOptions(generateOptions(quizCards[nextIdx].back, cards.filter(c => c.deckId === selectedDeck?.id)));
+    } else {
+      setQuizComplete(true);
+    }
+  };
+
+  // Deck selection screen
+  if (!selectedDeck) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Quiz Mode</h1>
+          <p className="text-muted-foreground mt-1">Select a deck to start a Kahoot-style quiz</p>
+        </div>
+
+        {decks.length === 0 ? (
+          <div className="bg-card border border-dashed border-border p-8 rounded-xl text-center py-12">
+            <div className="bg-muted inline-flex p-3 rounded-full mb-4">
+              <Icons.Quiz size={24} className="text-muted-foreground" />
+            </div>
+            <h4 className="text-lg font-medium mb-2">No decks yet</h4>
+            <p className="text-muted-foreground text-sm mb-4">Create a deck first to start quizzing.</p>
+            <button onClick={() => setPage('create-deck')} className="text-white underline hover:text-gray-300">
+              Go to Deck Builder
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {decks.map(deck => {
+              const deckCardCount = cards.filter(c => c.deckId === deck.id).length;
+              return (
+                <div 
+                  key={deck.id}
+                  onClick={() => deckCardCount >= 1 && startQuiz(deck)}
+                  className={`bg-card border border-border p-6 rounded-xl transition-all ${
+                    deckCardCount >= 1 
+                      ? 'cursor-pointer hover:border-blue-500 hover:bg-blue-500/5' 
+                      : 'opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="bg-blue-500/20 p-2 rounded-lg">
+                      <Icons.Quiz size={20} className="text-blue-500" />
+                    </div>
+                    <span className="text-xs text-muted-foreground uppercase font-bold">{deck.subject}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">{deck.title}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {deckCardCount} cards {deckCardCount < 1 && '(need at least 1)'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Quiz complete screen
+  if (quizComplete) {
+    const percentage = Math.round((score / (quizCards.length * 100)) * 100);
+    const grade = percentage >= 90 ? 'A+' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : 'F';
+    
+    return (
+      <div className="max-w-2xl mx-auto text-center space-y-8 py-12">
+        <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 p-8 rounded-full inline-block">
+          <Icons.Trophy size={64} className="text-yellow-500" />
+        </div>
+        
+        <div>
+          <h1 className="text-4xl font-bold mb-2">Quiz Complete!</h1>
+          <p className="text-muted-foreground">{selectedDeck.title}</p>
+        </div>
+
+        <div className="bg-card border border-border rounded-2xl p-8 space-y-6">
+          <div className="text-6xl font-bold text-blue-500">{score}</div>
+          <p className="text-muted-foreground">Total Points</p>
+          
+          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
+            <div>
+              <div className="text-2xl font-bold">{grade}</div>
+              <p className="text-xs text-muted-foreground">Grade</p>
+            </div>
+            <div>
+              <div className="text-2xl font-bold">{Math.round((score / (quizCards.length * 150)) * 100)}%</div>
+              <p className="text-xs text-muted-foreground">Accuracy</p>
+            </div>
+            <div>
+              <div className="text-2xl font-bold">{bestStreak}</div>
+              <p className="text-xs text-muted-foreground">Best Streak</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-4 justify-center">
+          <button 
+            onClick={() => startQuiz(selectedDeck)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            Play Again
+          </button>
+          <button 
+            onClick={() => setSelectedDeck(null)}
+            className="bg-muted hover:bg-muted/80 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            Choose Another Deck
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Quiz gameplay screen
+  const currentCard = quizCards[currentIndex];
+  const progress = ((currentIndex + 1) / quizCards.length) * 100;
+  const timerColor = timeLeft > 10 ? 'bg-green-500' : timeLeft > 5 ? 'bg-yellow-500' : 'bg-red-500';
+  const optionColors = ['bg-red-600 hover:bg-red-700', 'bg-blue-600 hover:bg-blue-700', 'bg-yellow-600 hover:bg-yellow-700', 'bg-green-600 hover:bg-green-700'];
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <button 
+          onClick={() => setSelectedDeck(null)}
+          className="text-muted-foreground hover:text-white flex items-center gap-1"
+        >
+          <Icons.Close size={20} /> Exit
+        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-card px-3 py-1.5 rounded-lg">
+            <Icons.Target size={16} className="text-blue-500" />
+            <span className="font-bold">{score}</span>
+          </div>
+          <div className="flex items-center gap-2 bg-card px-3 py-1.5 rounded-lg">
+            <span className="text-orange-500">🔥</span>
+            <span className="font-bold">{streak}</span>
+          </div>
+        </div>
+        <div className="text-sm text-muted-foreground">
+          {currentIndex + 1} / {quizCards.length}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full bg-muted h-2 rounded-full">
+        <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+      </div>
+
+      {/* Timer */}
+      <div className="flex justify-center">
+        <div className={`w-16 h-16 rounded-full ${timerColor} flex items-center justify-center text-2xl font-bold text-white transition-colors`}>
+          {timeLeft}
+        </div>
+      </div>
+
+      {/* Question */}
+      <div className="bg-card border border-border rounded-2xl p-8 text-center">
+        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-4">Question</p>
+        <h2 className="text-2xl md:text-3xl font-semibold">{currentCard.front}</h2>
+      </div>
+
+      {/* Answer options - Kahoot style grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {options.map((option, idx) => {
+          const isCorrect = option === currentCard.back;
+          const isSelected = selectedAnswer === option;
+          
+          let bgClass = optionColors[idx];
+          if (answered) {
+            if (isCorrect) {
+              bgClass = 'bg-green-500 ring-4 ring-green-400';
+            } else if (isSelected && !isCorrect) {
+              bgClass = 'bg-red-900 opacity-75';
+            } else {
+              bgClass = 'bg-gray-700 opacity-50';
+            }
+          }
+
+          return (
+            <button
+              key={idx}
+              onClick={() => handleAnswer(option)}
+              disabled={answered}
+              className={`${bgClass} p-6 rounded-xl text-white font-medium text-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:transform-none text-left`}
+            >
+              <div className="flex items-start gap-3">
+                <span className="bg-white/20 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
+                  {['A', 'B', 'C', 'D'][idx]}
+                </span>
+                <span className="line-clamp-3">{option}</span>
+              </div>
+              {answered && isCorrect && (
+                <div className="mt-2 flex items-center gap-1 text-sm">
+                  <Icons.Check size={16} /> Correct!
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Next button */}
+      {answered && (
+        <div className="flex justify-center">
+          <button
+            onClick={nextQuestion}
+            className="bg-white text-black px-8 py-3 rounded-lg font-bold hover:bg-gray-200 transition-colors"
+          >
+            {currentIndex < quizCards.length - 1 ? 'Next Question' : 'See Results'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- MAIN APP CONTROLLER ---
 
 const App: React.FC = () => {
@@ -2519,6 +2838,9 @@ const App: React.FC = () => {
       )}
       {currentPage === 'profile' && (
           <ProfilePage user={user} onUpdateUser={setUser} onLogout={handleLogout} />
+      )}
+      {currentPage === 'quiz' && (
+          <QuizPage decks={decks} cards={cards} setPage={setCurrentPage} />
       )}
     </Layout>
   );

@@ -20,7 +20,11 @@ import {
   ChevronRight,
   BrainCircuit,
   Pencil,
-  ArrowLeft
+  ArrowLeft,
+  HelpCircle,
+  Trophy,
+  Clock,
+  Target
 } from 'lucide-react';
 
 export const Icons = {
@@ -44,5 +48,9 @@ export const Icons = {
   ChevronRight: ChevronRight,
   Logo: BrainCircuit,
   Edit: Pencil,
-  Back: ArrowLeft
+  Back: ArrowLeft,
+  Quiz: HelpCircle,
+  Trophy: Trophy,
+  Clock: Clock,
+  Target: Target
 };
