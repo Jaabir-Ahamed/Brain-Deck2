@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BrainDeck</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon_io (1)/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon_io (1)/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon_io (1)/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon_io (1)/site.webmanifest" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              background: '#09090b',
+              foreground: '#fafafa',
+              card: '#18181b',
+              'card-foreground': '#fafafa',
+              popover: '#18181b',
+              'popover-foreground': '#fafafa',
+              primary: '#fafafa',
+              'primary-foreground': '#18181b',
+              secondary: '#27272a',
+              'secondary-foreground': '#fafafa',
+              muted: '#27272a',
+              'muted-foreground': '#a1a1aa',
+              accent: '#27272a',
+              'accent-foreground': '#fafafa',
+              destructive: '#7f1d1d',
+              'destructive-foreground': '#fafafa',
+              border: '#27272a',
+              input: '#27272a',
+              ring: '#d4d4d8',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #09090b;
+        color: #fafafa;
+        font-family: 'Inter', sans-serif;
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #09090b;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #27272a;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3f3f46;
+      }
+      .flip-card {
+        background-color: transparent;
+        perspective: 1000px;
+      }
+      .flip-card-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+        transition: transform 0.6s;
+        transform-style: preserve-3d;
+      }
+      .flip-card-front, .flip-card-back {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.75rem;
+      }
+      .flip-card-back {
+        transform: rotateY(180deg);
+      }
+      .flipped .flip-card-inner {
+        transform: rotateY(180deg);
+      }
+    </style>
+  <script type="module" src="/index.tsx"></script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
