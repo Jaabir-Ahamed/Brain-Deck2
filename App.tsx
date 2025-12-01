@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Icons } from './components/Icons';
+import LandingPage from './components/LandingPage';
 import { User, Deck, Card, AIUploadJob } from './types';
 import { generateFlashcardsFromTopic } from './services/geminiService';
 import { calculateSm2, getNextReviewDate, formatInterval } from './utils/srs';
@@ -102,8 +103,12 @@ const Layout: React.FC<{
 
 // --- PAGE: LOGIN / SIGNUP ---
 
-const AuthPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
-  const [mode, setMode] = useState<'login' | 'signup' | 'forgot-password'>('login');
+const AuthPage: React.FC<{ 
+  onLogin: (user: User) => void; 
+  onBack: () => void;
+  startMode?: 'login' | 'signup';
+}> = ({ onLogin, onBack, startMode = 'login' }) => {
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot-password'>(startMode);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -331,6 +336,15 @@ const AuthPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      {/* Back to Landing Button */}
+      <button 
+        onClick={onBack}
+        className="fixed top-4 left-4 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors group"
+      >
+        <Icons.Back size={20} className="group-hover:-translate-x-1 transition-transform" />
+        <span className="text-sm font-medium">Back to Home</span>
+      </button>
+
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center">
           <div className="bg-white text-black p-4 rounded-2xl mb-4">
@@ -2005,6 +2019,8 @@ const ResetPasswordPage: React.FC<{ onComplete: () => void }> = ({ onComplete })
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState('login');
+  const [showLandingPage, setShowLandingPage] = useState(true);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [decks, setDecks] = useState<Deck[]>(INITIAL_DECKS);
   const [cards, setCards] = useState<Card[]>(INITIAL_CARDS);
   const [activeDeck, setActiveDeck] = useState<Deck | null>(null);
@@ -2217,6 +2233,7 @@ const App: React.FC = () => {
     setDecks([]);
     setCards([]);
     setCurrentPage('login');
+    setShowLandingPage(true);
   };
 
   const handleAddDeck = async (newDeck: Omit<Deck, 'id' | 'created'>, newCards: Omit<Card, 'id'>[]) => {
@@ -2405,6 +2422,34 @@ const App: React.FC = () => {
   }
 
   if (!user) {
+    if (showLandingPage) {
+      return (
+        <>
+          {!isSupabaseConfigured && (
+            <div className="fixed top-0 left-0 right-0 bg-yellow-500/20 border-b border-yellow-500/50 text-yellow-400 px-4 py-3 text-sm z-50">
+              <div className="max-w-6xl mx-auto flex items-center gap-2">
+                <Icons.Error size={18} />
+                <span>
+                  Supabase not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.
+                  See SUPABASE_SETUP.md for instructions.
+                </span>
+              </div>
+            </div>
+          )}
+          <LandingPage 
+            onGetStarted={() => {
+              setShowLandingPage(false);
+              setAuthMode('signup');
+            }}
+            onLogIn={() => {
+              setShowLandingPage(false);
+              setAuthMode('login');
+            }}
+          />
+        </>
+      );
+    }
+    
     return (
       <>
         {!isSupabaseConfigured && (
@@ -2418,7 +2463,11 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-        <AuthPage onLogin={handleLogin} />
+        <AuthPage 
+          onLogin={handleLogin} 
+          onBack={() => setShowLandingPage(true)}
+          startMode={authMode}
+        />
       </>
     );
   }
