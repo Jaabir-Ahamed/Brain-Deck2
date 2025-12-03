@@ -440,8 +440,8 @@ const AuthPage: React.FC<{
           )}
 
           {error && (
-            <div className="text-red-500 text-sm bg-red-500/10 p-3 rounded-lg flex items-center gap-2">
-              <Icons.Error size={16} /> {error}
+            <div className="text-blue-400 text-sm bg-blue-500/10 p-3 rounded-lg flex items-center gap-2 border border-blue-500/20">
+              <Icons.Search size={16} /> {error}
             </div>
           )}
 
